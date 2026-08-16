@@ -400,7 +400,7 @@ async def upload_file(
             "language": language,
             "language_name": LANGUAGE_NAMES[language],
             "translated_text": translated_text,
-            "audio_url": f"http://127.0.0.1:8000/audio?v={version}"
+            "audio_url": f"https://sunopdf.onrender.com/audio?v={version}"
         }
 
     except HTTPException:
