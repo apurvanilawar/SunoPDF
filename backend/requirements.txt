@@ -3,5 +3,7 @@ uvicorn
 python-multipart
 PyMuPDF
 gTTS
-Pillow
 pytesseract
+Pillow
+edge-tts
+deep-translator
