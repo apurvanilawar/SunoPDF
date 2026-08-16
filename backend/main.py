@@ -71,7 +71,7 @@ LANGUAGE_NAMES = {
 # =========================================================
 
 AUDIO_FILE_PATH = "generated_audio.mp3"
-
+"audio_url": f"/audio?v={version}"
 
 # =========================================================
 # HOME
