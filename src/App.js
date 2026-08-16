@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import axios from "axios";
 
 const API_BASE_URL = "https://sunopdf.onrender.com";
@@ -11,7 +11,21 @@ export default function App() {
   const [message, setMessage] = useState("");
 
   const [audioUrl, setAudioUrl] = useState("");
+  const [audioBlob, setAudioBlob] = useState(null);
+
   const [translatedText, setTranslatedText] = useState("");
+
+  // =========================================
+  // CLEANUP AUDIO BLOB
+  // =========================================
+
+  useEffect(() => {
+    return () => {
+      if (audioUrl && audioUrl.startsWith("blob:")) {
+        window.URL.revokeObjectURL(audioUrl);
+      }
+    };
+  }, [audioUrl]);
 
   // =========================================
   // FILE SELECT
@@ -30,9 +44,15 @@ export default function App() {
       return;
     }
 
+    // Remove old audio
+    if (audioUrl && audioUrl.startsWith("blob:")) {
+      window.URL.revokeObjectURL(audioUrl);
+    }
+
     setFile(selectedFile);
     setMessage("");
     setAudioUrl("");
+    setAudioBlob(null);
     setTranslatedText("");
   };
 
@@ -43,9 +63,13 @@ export default function App() {
   const handleLanguageChange = (e) => {
     setLanguage(e.target.value);
 
-    // Old result remove karo
+    if (audioUrl && audioUrl.startsWith("blob:")) {
+      window.URL.revokeObjectURL(audioUrl);
+    }
+
     setMessage("");
     setAudioUrl("");
+    setAudioBlob(null);
     setTranslatedText("");
   };
 
@@ -62,6 +86,7 @@ export default function App() {
     setLoading(true);
     setMessage("⏳ PDF is being converted...");
     setAudioUrl("");
+    setAudioBlob(null);
     setTranslatedText("");
 
     const formData = new FormData();
@@ -70,9 +95,23 @@ export default function App() {
     formData.append("language", language);
 
     try {
+      console.log("Uploading PDF...");
+      console.log("Backend:", API_BASE_URL);
+      console.log("Language:", language);
+
+      // =====================================
+      // SEND PDF TO RENDER BACKEND
+      // =====================================
+
       const response = await axios.post(
         `${API_BASE_URL}/upload`,
-        formData
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+          timeout: 120000,
+        }
       );
 
       console.log("Upload Success:", response.data);
@@ -97,32 +136,141 @@ export default function App() {
       }
 
       // =====================================
-      // AUDIO URL FROM BACKEND
+      // AUDIO URL
       // =====================================
 
-    if (response.data.audio_url) {
-  setAudioUrl(response.data.audio_url);
-} else {
-  setAudioUrl(
-    `${API_BASE_URL}/audio?time=${Date.now()}`
-  );
-}
+      let finalAudioUrl = "";
+
+      if (response.data.audio_url) {
+        finalAudioUrl =
+          response.data.audio_url;
+
+        // Convert localhost URL to Render URL
+        if (
+          finalAudioUrl.includes(
+            "127.0.0.1:8000"
+          ) ||
+          finalAudioUrl.includes(
+            "localhost:8000"
+          )
+        ) {
+          finalAudioUrl =
+            finalAudioUrl.replace(
+              /^https?:\/\/(127\.0\.0\.1|localhost):8000/,
+              API_BASE_URL
+            );
+        }
+
+        // If backend returns relative URL
+        if (
+          finalAudioUrl.startsWith("/")
+        ) {
+          finalAudioUrl =
+            `${API_BASE_URL}${finalAudioUrl}`;
+        }
+      } else {
+        // Backup audio URL
+        finalAudioUrl =
+          `${API_BASE_URL}/audio?time=${Date.now()}`;
+      }
+
+      console.log(
+        "Final Audio URL:",
+        finalAudioUrl
+      );
+
+      // =====================================
+      // FETCH AUDIO AS BLOB
+      // =====================================
+
+      setMessage(
+        "🎧 Audio generated! Loading audio..."
+      );
+
+      const audioResponse =
+        await fetch(finalAudioUrl);
+
+      if (!audioResponse.ok) {
+        throw new Error(
+          `Audio loading failed: ${audioResponse.status}`
+        );
+      }
+
+      const contentType =
+        audioResponse.headers.get(
+          "content-type"
+        );
+
+      console.log(
+        "Audio Content-Type:",
+        contentType
+      );
+
+      const blob =
+        await audioResponse.blob();
+
+      if (blob.size === 0) {
+        throw new Error(
+          "Audio file is empty."
+        );
+      }
+
+      console.log(
+        "Audio Blob Size:",
+        blob.size
+      );
+
+      // =====================================
+      // CREATE LOCAL BLOB URL
+      // =====================================
+
+      const blobUrl =
+        window.URL.createObjectURL(blob);
+
+      setAudioBlob(blob);
+      setAudioUrl(blobUrl);
+
+      setMessage(
+        "🎉 Audio Generated Successfully!"
+      );
+
       alert(
         "🎉 PDF Successfully Converted to Audio!"
       );
 
     } catch (error) {
-      console.error("Upload Error:", error);
+      console.error(
+        "================================="
+      );
+
+      console.error(
+        "UPLOAD/AUDIO ERROR:",
+        error
+      );
+
+      console.error(
+        "================================="
+      );
 
       setMessage("");
       setAudioUrl("");
+      setAudioBlob(null);
       setTranslatedText("");
 
-      const errorMessage =
-        error.response?.data?.detail ||
-        error.response?.data?.message ||
-        error.message ||
+      let errorMessage =
         "Network Error. Please try again.";
+
+      if (error.response) {
+        errorMessage =
+          error.response.data?.detail ||
+          error.response.data?.message ||
+          `Server Error: ${error.response.status}`;
+      } else if (error.request) {
+        errorMessage =
+          "Cannot connect to SunoPDF server. Please check your internet connection or Render service.";
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
 
       alert(errorMessage);
 
@@ -135,22 +283,19 @@ export default function App() {
   // DOWNLOAD MP3
   // =========================================
 
-  const handleDownload = async () => {
-    if (!audioUrl) {
+  const handleDownload = () => {
+    if (!audioBlob) {
+      alert(
+        "Audio is not ready yet. Please wait."
+      );
       return;
     }
 
     try {
-      const response = await fetch(audioUrl);
-
-      if (!response.ok) {
-        throw new Error("Audio download failed.");
-      }
-
-      const blob = await response.blob();
-
       const downloadUrl =
-        window.URL.createObjectURL(blob);
+        window.URL.createObjectURL(
+          audioBlob
+        );
 
       const link =
         document.createElement("a");
@@ -160,10 +305,14 @@ export default function App() {
       const cleanName = file
         ? file.name
             .replace(/\.pdf$/i, "")
-            .replace(/[^a-zA-Z0-9-_]/g, "_")
+            .replace(
+              /[^a-zA-Z0-9-_]/g,
+              "_"
+            )
         : "audio";
 
-      link.download = `SunoPDF-${cleanName}.mp3`;
+      link.download =
+        `SunoPDF-${cleanName}.mp3`;
 
       document.body.appendChild(link);
 
@@ -171,7 +320,15 @@ export default function App() {
 
       document.body.removeChild(link);
 
-      window.URL.revokeObjectURL(downloadUrl);
+      setTimeout(() => {
+        window.URL.revokeObjectURL(
+          downloadUrl
+        );
+      }, 1000);
+
+      console.log(
+        "MP3 Download Started"
+      );
 
     } catch (error) {
       console.error(
@@ -179,8 +336,9 @@ export default function App() {
         error
       );
 
-      // Backup
-      window.open(audioUrl, "_blank");
+      alert(
+        "Unable to download audio."
+      );
     }
   };
 
@@ -219,7 +377,6 @@ export default function App() {
           "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
       }}
     >
-
       <div
         style={{
           width: "100%",
@@ -234,9 +391,7 @@ export default function App() {
         }}
       >
 
-        {/* =====================================
-            HEADING
-        ====================================== */}
+        {/* HEADING */}
 
         <h1
           style={{
@@ -259,10 +414,7 @@ export default function App() {
           Convert Any PDF into AI Voice
         </p>
 
-
-        {/* =====================================
-            FILE UPLOAD
-        ====================================== */}
+        {/* FILE UPLOAD */}
 
         <input
           type="file"
@@ -281,10 +433,7 @@ export default function App() {
           }}
         />
 
-
-        {/* =====================================
-            SELECTED FILE
-        ====================================== */}
+        {/* SELECTED FILE */}
 
         {file && (
           <div
@@ -328,10 +477,7 @@ export default function App() {
           </div>
         )}
 
-
-        {/* =====================================
-            LANGUAGE
-        ====================================== */}
+        {/* LANGUAGE */}
 
         <select
           value={language}
@@ -352,7 +498,6 @@ export default function App() {
               : "pointer",
           }}
         >
-
           <option value="en">
             🇬🇧 English
           </option>
@@ -364,13 +509,9 @@ export default function App() {
           <option value="mr">
             🇮🇳 Marathi
           </option>
-
         </select>
 
-
-        {/* =====================================
-            CONVERT BUTTON
-        ====================================== */}
+        {/* CONVERT BUTTON */}
 
         <button
           onClick={uploadFile}
@@ -399,10 +540,7 @@ export default function App() {
             : "🎧 Convert to Audio"}
         </button>
 
-
-        {/* =====================================
-            STATUS
-        ====================================== */}
+        {/* STATUS */}
 
         {message && (
           <div
@@ -419,10 +557,7 @@ export default function App() {
           </div>
         )}
 
-
-        {/* =====================================
-            TRANSLATED TEXT
-        ====================================== */}
+        {/* TRANSLATED TEXT */}
 
         {translatedText && !loading && (
           <div
@@ -431,11 +566,11 @@ export default function App() {
               padding: "20px",
               background: "#f8fafc",
               borderRadius: "15px",
-              border: "1px solid #e2e8f0",
+              border:
+                "1px solid #e2e8f0",
               textAlign: "left",
             }}
           >
-
             <h3
               style={{
                 marginTop: 0,
@@ -473,14 +608,10 @@ export default function App() {
                 {getLanguageName()}
               </strong>
             </p>
-
           </div>
         )}
 
-
-        {/* =====================================
-            AUDIO PLAYER
-        ====================================== */}
+        {/* AUDIO PLAYER */}
 
         {audioUrl && !loading && (
           <div
@@ -491,7 +622,6 @@ export default function App() {
               borderRadius: "15px",
             }}
           >
-
             <h3
               style={{
                 marginTop: 0,
@@ -514,33 +644,33 @@ export default function App() {
               the audio element.
             </audio>
 
-
-            {/* =================================
-                DOWNLOAD
-            ================================== */}
+            {/* DOWNLOAD */}
 
             <button
               onClick={handleDownload}
+              disabled={!audioBlob}
               style={{
                 marginTop: "20px",
                 padding: "14px 25px",
-                background: "#10b981",
+                background: !audioBlob
+                  ? "#9ca3af"
+                  : "#10b981",
                 color: "white",
                 border: "none",
                 borderRadius: "10px",
                 fontWeight: "bold",
                 fontSize: "16px",
-                cursor: "pointer",
+                cursor: !audioBlob
+                  ? "not-allowed"
+                  : "pointer",
                 boxShadow:
                   "0 4px 6px rgba(0,0,0,0.1)",
               }}
             >
               ⬇ Download MP3
             </button>
-
           </div>
         )}
-
       </div>
     </div>
   );
