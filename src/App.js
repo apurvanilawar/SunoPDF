@@ -100,12 +100,8 @@ export default function App() {
       // AUDIO URL FROM BACKEND
       // =====================================
 
-      if (response.data.audio_url) {
-  const url = response.data.audio_url.startsWith("http")
-    ? response.data.audio_url
-    : `${API_BASE_URL}${response.data.audio_url}`;
-
-  setAudioUrl(url);
+    if (response.data.audio_url) {
+  setAudioUrl(response.data.audio_url);
 } else {
   setAudioUrl(
     `${API_BASE_URL}/audio?time=${Date.now()}`
