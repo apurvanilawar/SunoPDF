@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import axios from "axios";
 
-const API_BASE_URL = "http://127.0.0.1:8000";
+const API_BASE_URL = "https://sunopdf.onrender.com";
 
 export default function App() {
   const [file, setFile] = useState(null);
@@ -101,14 +101,16 @@ export default function App() {
       // =====================================
 
       if (response.data.audio_url) {
-        setAudioUrl(response.data.audio_url);
-      } else {
-        // Backup URL
-        setAudioUrl(
-          `${API_BASE_URL}/audio?time=${Date.now()}`
-        );
-      }
+  const url = response.data.audio_url.startsWith("http")
+    ? response.data.audio_url
+    : `${API_BASE_URL}${response.data.audio_url}`;
 
+  setAudioUrl(url);
+} else {
+  setAudioUrl(
+    `${API_BASE_URL}/audio?time=${Date.now()}`
+  );
+}
       alert(
         "🎉 PDF Successfully Converted to Audio!"
       );
