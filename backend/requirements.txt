@@ -3,7 +3,7 @@ uvicorn
 python-multipart
 PyMuPDF
 gTTS
-pytesseract
+pytesseract==0.3.13
 Pillow
 edge-tts
 deep-translator
